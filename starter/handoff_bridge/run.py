@@ -21,7 +21,11 @@ from sovereign_agent.session.directory import create_session
 
 from starter.edinburgh_research.tools import build_tool_registry
 from starter.handoff_bridge.bridge import HandoffBridge
-from starter.rasa_half.structured_half import RasaStructuredHalf, spawn_mock_rasa
+from starter.rasa_half.structured_half import (
+    RasaHostLifecycle,
+    RasaStructuredHalf,
+    spawn_mock_rasa,
+)
 
 
 def _build_fake_client_two_rounds() -> FakeLLMClient:
@@ -131,13 +135,13 @@ async def run_scenario(real: bool) -> int:
         print(f"Session {session.session_id}")
         print(f"  dir: {session.directory}")
 
-        # Spawn mock Rasa unless --real
-        server = None
         if not real:
+            server = None
             server, _thread, mock_url = spawn_mock_rasa(port=5906)
             rasa_half = RasaStructuredHalf(rasa_url=mock_url)
         else:
-            rasa_half = RasaStructuredHalf()
+            server = None
+            rasa_half = None
 
         client = _build_fake_client_two_rounds()
         tools = build_tool_registry(session)
@@ -145,14 +149,27 @@ async def run_scenario(real: bool) -> int:
             planner=DefaultPlanner(model="fake", client=client),
             executor=DefaultExecutor(model="fake", client=client, tools=tools),  # type: ignore[arg-type]
         )
-        bridge = HandoffBridge(
-            loop_half=loop_half,
-            structured_half=rasa_half,
-            max_rounds=3,
-        )
-
         try:
-            result = await bridge.run(session, {"task": "book for party of 12 in Haymarket"})
+            if real:
+                log_dir = session.logs_dir / "rasa"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                print(f"  Rasa logs: {log_dir}")
+                async with RasaHostLifecycle(log_dir=log_dir) as rasa_url:
+                    bridge = HandoffBridge(
+                        loop_half=loop_half,
+                        structured_half=RasaStructuredHalf(rasa_url=rasa_url),
+                        max_rounds=3,
+                    )
+                    result = await bridge.run(
+                        session, {"task": "book for party of 12 in Haymarket"}
+                    )
+            else:
+                bridge = HandoffBridge(
+                    loop_half=loop_half,
+                    structured_half=rasa_half,
+                    max_rounds=3,
+                )
+                result = await bridge.run(session, {"task": "book for party of 12 in Haymarket"})
         finally:
             if server is not None:
                 server.shutdown()

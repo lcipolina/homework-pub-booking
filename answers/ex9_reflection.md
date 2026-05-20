@@ -4,28 +4,36 @@
 
 ### Your answer
 
-In my Ex7 run (session sess_a382a2149fc1), the planner's second
-subgoal was sg_2 "commit the booking under policy rules" with
-assigned_half: "structured". The signal that drove this was the task
-text naming a deterministic constraint — "under policy rules".
-Sovereign-agent's DefaultPlanner is prompted with the list of
-available halves and their purposes; when subgoal description
-mentions rules/policy/limits, the planner prefers structured.
+In my Ex7 real run (session `sess_3adc43074c06`), the first planner
+ticket (`logs/tickets/tk_5b8dcd34/raw_output.json`) produced subgoal
+`sg_1` with `assigned_half: "loop"` and description "retry with larger
+venue after rejection." The loop executor then called
+`handoff_to_structured` with context "party of 12 near Haymarket" and
+booking data containing `party_size: "12"`.
 
-This decision is advisory, not physical. The orchestrator respects
-it only because both halves are wired up. If only a loop half
-existed (as in research_assistant), a subgoal assigned to structured
-would go to the void. That's failure mode #4 from the course slides.
+The decisive signal was the bridge trace, not the natural-language
+summary. `logs/trace.jsonl` records the transition from loop to
+structured in round 1, then immediately records structured returning to
+loop with `rejection_reason: "sorry, we can't accept this booking.
+reason: party_too_large"`. That state transition forced a second loop
+round instead of allowing the first proposal to count as complete.
 
-The broader lesson: the planner makes an architectural decision
-based on prose interpretation. Put the rules somewhere the LLM
-cannot mis-assign — in the structured half's Python — and prose
-ambiguity no longer matters.
+Round 2 shows the handoff decision working as a control mechanism. The
+next executor ticket proposed a smaller booking: `party_size: "6"` at
+The Royal Oak, with reason "retry after reverse handoff — scaled down to
+fit policy." The trace then records structured moving to `complete`.
+
+The lesson is that planner assignment alone is advisory; the bridge must
+enforce typed transitions. Here, `assigned_half: "loop"` caused research,
+but only the explicit `handoff_to_structured` call and the structured
+half's rejection/approval states made the booking outcome auditable.
 
 ### Citation
 
-- sessions/sess_a382a2149fc1/logs/tickets/tk_*/raw_output.json
-- sessions/sess_a382a2149fc1/logs/trace.jsonl:23
+- Real run `make ex7-real`, session `sess_3adc43074c06`
+- `logs/tickets/tk_5b8dcd34/raw_output.json` — subgoal `sg_1`, `assigned_half: "loop"`
+- `logs/trace.jsonl` — loop→structured, structured→loop rejection, structured→complete
+- starter/handoff_bridge/bridge.py — `HandoffBridge.run`
 
 ---
 
@@ -33,16 +41,18 @@ ambiguity no longer matters.
 
 ### Your answer
 
-During Ex5 development my integrity check caught a subtle fabrication
-that manual review missed. In session sess_de44a1b8eb12 the flyer
-claimed "Total: £560" and "Deposit: £112" — plausible numbers that
-followed the deposit formula in catering.json. I skimmed and moved on.
+The Ex5 integrity check is valuable because the flyer is not trusted
+just because it is well-formatted HTML. In my real `make ex5-real` run
+(session sess_918142e47522), the scenario produced `flyer.html` and
+`verify_dataflow` reported `dataflow OK: verified 4 fact(s) against
+tool outputs`. Those facts included the money values and the weather
+condition/temperature.
 
-verify_dataflow returned ok=False with unverified_facts=['£560','£112'].
-The trace showed calculate_cost returned total_gbp=540, deposit=0. The
-real total was £540 under the £300 deposit threshold. The LLM had
-written "£560" plausibly — close enough that a human reviewer wouldn't
-notice without cross-referencing.
+The test I care about is the opposite path: when the flyer says
+`£9999` but no tool returned that value, `verify_dataflow` flags it.
+That matters because `£9999` is not semantically impossible; it is
+just unsupported by this session's tools. A plausibility check would
+miss smaller fabrications like a believable but wrong deposit.
 
 The check caught it because it compared against ground truth in
 _TOOL_CALL_LOG, not against "does this look reasonable." The lesson
@@ -51,8 +61,8 @@ deliberately-weird value like £9999 and confirm it's caught.
 
 ### Citation
 
-- sessions/sess_de44a1b8eb12/workspace/flyer.md:12
-- sessions/sess_de44a1b8eb12/logs/trace.jsonl:15
+- Real run `make ex5-real`, session `sess_918142e47522`
+- tests/public/test_ex5_scaffold.py — fabrication check for `£9999`
 
 ---
 
@@ -60,20 +70,25 @@ deliberately-weird value like £9999 and confirm it's caught.
 
 ### Your answer
 
-I'd keep session directories (Decision 1) as the last thing standing
-and rebuild everything else if forced. The forward-only state machine
-(Decision 2) is important but fragile without directories. Tickets
-(Decision 3) I could rebuild as .jsonl files inside the session.
-Atomic-rename IPC (Decision 5) is replaceable by directory polling.
+I'd keep exactly one primitive: session directories. They are the
+boundary that makes every run inspectable as its own object. In this
+homework, each successful run printed a concrete session id:
+`sess_918142e47522` for Ex5, `sess_b0e505eea2b8` for Ex6,
+`sess_3adc43074c06` for Ex7, and `sess_813916a3547a` for Ex8 voice.
 
-Session directories are the irreplaceable piece. Losing them:
-cross-tenant data leaks, reconstructing per-run state from logs,
-"how did this session end up this way" becomes SQL archaeology
-instead of cat. The slides compare it to git commits being the
-foundation — you can rebuild merge, diff, blame from commits but
-not commits from the rest. Session directories are commits.
+The one failure mode I would expect without session directories is
+cross-run evidence contamination. A rejected booking from one attempt
+and an approved booking from a later attempt could share logs,
+handoff files, or trace events. Then the grader, or I, could not prove
+which tool output caused which final answer.
+
+The Ex7 run shows why this matters. Its session directory contains the
+round-1 rejection for `party_too_large` and the round-2 completion after
+the party was reduced to six. Keeping those artifacts together prevents
+the most dangerous debugging mistake: explaining the final success using
+evidence from a different run.
 
 ### Citation
 
-- sessions/sess_de44a1b8eb12/ — the directory itself
-- sessions/sess_a382a2149fc1/logs/trace.jsonl
+- Real/text runs: `sess_918142e47522`, `sess_b0e505eea2b8`, `sess_3adc43074c06`, `sess_813916a3547a`, `sess_aaf2d4c51905`
+- .gitignore — documents why persistent `sessions/` artifacts are not committed

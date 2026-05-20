@@ -84,7 +84,10 @@ async def run_voice_mode(session: Session, persona: ManagerPersona, max_turns: i
     """Voice mode. Real mic capture → Speechmatics STT → manager → Rime TTS."""
 
     # ── preflight: keys + deps ─────────────────────────────────────
-    speechmatics_key = os.environ.get("SPEECHMATICS_KEY", "").strip()
+    speechmatics_key = (
+        os.environ.get("SPEECHMATICS_KEY", "").strip()
+        or os.environ.get("SPEECHMATICS_API_KEY", "").strip()
+    )
     rime_key = os.environ.get("RIME_API_KEY", "").strip()
 
     if not speechmatics_key:

@@ -1,7 +1,7 @@
 """Ex8 — the pub manager persona.
 
-Wraps a Llama-3.3-70B-Instruct model on Nebius to play an Edinburgh
-pub manager. The persona is deterministic (temperature=0) and
+Wraps the configured OpenAI-compatible LLM to play an Edinburgh pub
+manager. The persona is deterministic (temperature=0) and
 rule-based: accepts bookings under £300 deposit and <= 8 people,
 rejects otherwise with a specific reason.
 """
@@ -15,6 +15,7 @@ from sovereign_agent._internal.llm_client import (
     LLMClient,
     OpenAICompatibleClient,
 )
+from sovereign_agent.config import Config
 
 # TODO: if you want to tweak the persona (accent, attitude, name), edit
 # here. Keep the rules section intact — the grader's judge checks that
@@ -60,12 +61,13 @@ class ManagerPersona:
 
     @classmethod
     def from_env(cls) -> ManagerPersona:
-        """Build a ManagerPersona using NEBIUS_KEY from the environment."""
+        """Build a ManagerPersona from the same provider config as the agent."""
+        cfg = Config.from_env()
         client = OpenAICompatibleClient(
-            base_url="https://api.tokenfactory.nebius.com/v1/",
-            api_key_env="NEBIUS_KEY",
+            base_url=cfg.llm_base_url,
+            api_key_env=cfg.llm_api_key_env,
         )
-        return cls(client=client)
+        return cls(client=client, model=cfg.llm_memory_model)
 
     async def respond(self, utterance: str) -> str:
         """Send one user utterance, get the manager's reply back."""

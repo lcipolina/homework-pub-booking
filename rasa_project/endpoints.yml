@@ -15,7 +15,7 @@ action_endpoint:
 
 
 # ==============================================================================
-# LLM model groups — all point at Nebius Token Factory
+# LLM model groups — OpenAI-compatible provider config
 # ==============================================================================
 # IMPORTANT: Rasa's command generator parses structured commands
 # (StartFlow, SetSlot, etc.) out of the LLM's response. Reasoning
@@ -23,38 +23,24 @@ action_endpoint:
 # and Rasa's parser doesn't handle that cleanly. ALWAYS use an
 # **instruct** model here, never a thinking/reasoning one.
 #
-# Good instruct models on Nebius:
-#   meta-llama/Llama-3.3-70B-Instruct
-#   meta-llama/Llama-3.1-70B-Instruct
-#   Qwen/Qwen3-32B                    (the non-thinking variant)
-#   MiniMaxAI/MiniMax-M2.5             (instruct, good at tool-calling)
-#
-# Do NOT use:
-#   Qwen/Qwen3-Next-80B-A3B-Thinking  ← emits <think> tags, breaks Rasa
-#   DeepSeek-R1*, o3-mini, etc.
-#
-# `api_key: ${NEBIUS_KEY}` — Rasa does env-variable substitution here,
-# so NEBIUS_KEY from your .env flows through. No OPENAI_API_KEY needed.
+# Rasa does env-variable substitution here, so OPENROUTER_API_KEY from
+# .env flows through. Keep these as non-reasoning instruct/embedding
+# models; Rasa's command parser expects concise structured output.
 
 model_groups:
   - id: nebius_llm
     models:
-      - provider: self-hosted
-        model: meta-llama/Llama-3.3-70B-Instruct
-        api_base: "https://api.tokenfactory.nebius.com/v1"
-        api_key: ${NEBIUS_KEY}
+      - provider: openrouter
+        model: openai/gpt-4o-mini
+        api_base: "https://openrouter.ai/api/v1"
+        api_key: ${OPENROUTER_API_KEY}
         temperature: 0.1
         max_tokens: 1024
         timeout: 30
 
   - id: nebius_embeddings
     models:
-      # Note: provider is `openai` for embeddings even though we're on
-      # Nebius. Rasa's LiteLLM-backed embeddings client only understands
-      # the `openai` provider tag for OpenAI-compatible endpoints (Nebius
-      # speaks the OpenAI API). `self-hosted` works for the LLM but not
-      # for embeddings — this asymmetry is a known LiteLLM quirk.
-      - provider: openai
-        model: Qwen/Qwen3-Embedding-8B
-        api_base: "https://api.tokenfactory.nebius.com/v1"
-        api_key: ${NEBIUS_KEY}
+      - provider: openrouter
+        model: openai/text-embedding-3-small
+        api_base: "https://openrouter.ai/api/v1"
+        api_key: ${OPENROUTER_API_KEY}

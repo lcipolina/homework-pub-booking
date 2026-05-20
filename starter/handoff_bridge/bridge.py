@@ -46,6 +46,8 @@ class HandoffBridge:
         structured_half: StructuredHalf,
         max_rounds: int = 3,
     ) -> None:
+        if max_rounds < 1:
+            raise ValueError("max_rounds must be >= 1")
         self.loop_half = loop_half
         self.structured_half = structured_half
         self.max_rounds = max_rounds
@@ -144,11 +146,7 @@ class HandoffBridge:
                         },
                     }
                 )
-                forward_file = session.ipc_input_dir / "handoff_to_structured.json"
-                if forward_file.exists():
-                    archive = session.handoffs_audit_dir / f"round_{rounds}_forward.json"
-                    archive.parent.mkdir(parents=True, exist_ok=True)
-                    forward_file.rename(archive)
+                _archive_forward_handoff(session, rounds)
                 continue
 
             session.mark_failed(
@@ -176,6 +174,12 @@ class HandoffBridge:
 # ---------------------------------------------------------------------------
 def build_forward_handoff(session: Session, loop_result: HalfResult) -> Handoff:
     """Package a loop result into a forward-handoff payload for structured."""
+    payload = loop_result.handoff_payload
+    if isinstance(payload, dict):
+        data = payload.get("data", payload)
+    else:
+        data = loop_result.output
+
     return Handoff(
         from_half="loop",
         to_half="structured",
@@ -183,7 +187,7 @@ def build_forward_handoff(session: Session, loop_result: HalfResult) -> Handoff:
         session_id=session.session_id,
         reason="loop-half requested confirmation",
         context=loop_result.summary,
-        data=(loop_result.handoff_payload or {}).get("data") or loop_result.output,
+        data=data,
         return_instructions=(
             "If you cannot confirm (party too large, deposit too high, etc.), "
             "respond with next_action=escalate and include a human-readable "
@@ -194,7 +198,8 @@ def build_forward_handoff(session: Session, loop_result: HalfResult) -> Handoff:
 
 def build_reverse_task(loop_result: HalfResult, struct_result: HalfResult) -> dict:
     """Build the task dict to pass back to the loop half after a reject."""
-    reason = struct_result.output.get("reason") or struct_result.summary
+    output = struct_result.output if isinstance(struct_result.output, dict) else {}
+    reason = output.get("reason") or struct_result.summary or "structured half rejected"
     return {
         "task": (
             "The structured half rejected the previous proposal. "
@@ -206,6 +211,21 @@ def build_reverse_task(loop_result: HalfResult, struct_result: HalfResult) -> di
             "retry": True,
         },
     }
+
+
+def _archive_forward_handoff(session: Session, round_number: int) -> None:
+    forward_file = session.ipc_input_dir / "handoff_to_structured.json"
+    if not forward_file.exists():
+        return
+
+    archive_dir = session.handoffs_audit_dir
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archive = archive_dir / f"round_{round_number}_forward.json"
+    suffix = 1
+    while archive.exists():
+        archive = archive_dir / f"round_{round_number}_forward_{suffix}.json"
+        suffix += 1
+    forward_file.rename(archive)
 
 
 __all__ = [

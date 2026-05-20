@@ -46,9 +46,6 @@ class ValidationFailed(ValueError):  # noqa: N818
     """
 
 
-# ---------------------------------------------------------------------------
-# TODO — normalise_booking_payload
-# ---------------------------------------------------------------------------
 def normalise_booking_payload(raw: dict) -> dict:
     """Take a data dict from the loop half's handoff and produce a Rasa-shaped message."""
     import hashlib
@@ -73,19 +70,20 @@ def normalise_booking_payload(raw: dict) -> dict:
 
     party = parse_party_size(raw.get("party_size"))
 
-    deposit = 0
-    if raw.get("deposit") is not None:
-        deposit = parse_currency_gbp(raw["deposit"])
+    deposit_raw = raw.get("deposit_gbp", raw.get("deposit", 0))
+    deposit = parse_currency_gbp(deposit_raw)
 
     duration = raw.get("duration_hours", 3)
-    if isinstance(duration, str) and duration.isdigit():
+    try:
         duration = int(duration)
-    if not isinstance(duration, int) or duration < 1:
-        duration = 3
+    except (TypeError, ValueError):
+        raise ValidationFailed(f"cannot parse duration_hours: {duration!r}") from None
+    if duration < 1:
+        raise ValidationFailed(f"duration_hours must be >= 1, got {duration}")
 
     catering = raw.get("catering_tier", "bar_snacks")
     if catering not in ("drinks_only", "bar_snacks", "sit_down_meal", "three_course_meal"):
-        catering = "bar_snacks"
+        raise ValidationFailed(f"unknown catering_tier: {catering!r}")
 
     stable_suffix = hashlib.sha1(f"{venue_id}-{date_iso}-{time_24h}".encode()).hexdigest()[:8]
 
@@ -106,9 +104,6 @@ def normalise_booking_payload(raw: dict) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Date helper — added by solution
-# ---------------------------------------------------------------------------
 _MONTH_NAMES = {
     "january": 1,
     "february": 2,
@@ -145,6 +140,11 @@ def _normalise_date(raw: str) -> str:
         return "2026-04-26"
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
         return s
+    if m := re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", s):
+        day, month, year = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        if not (1 <= day <= 31 and 1 <= month <= 12):
+            raise ValidationFailed(f"cannot parse date: {raw!r}")
+        return f"{year:04d}-{month:02d}-{day:02d}"
     m = re.match(r"(\d{1,2})(?:st|nd|rd|th)?\s+(\w+)(?:\s+(\d{4}))?", s)
     if m:
         day = int(m.group(1))
@@ -159,20 +159,25 @@ def _normalise_date(raw: str) -> str:
 # ---------------------------------------------------------------------------
 # Helpers — provided. You may use them or write your own.
 # ---------------------------------------------------------------------------
-_GBP_PATTERN = re.compile(r"£?\s*(\d+(?:\.\d+)?)\s*(?:gbp|GBP)?", re.IGNORECASE)
+_GBP_PATTERN = re.compile(r"£?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:gbp)?", re.IGNORECASE)
 
 
 def parse_currency_gbp(raw: str | int | float) -> int:
     """Parse '£500', '500', '500 GBP', 500, 500.0 → 500 (int pounds).
     Rejects negative and non-numeric input."""
+    if isinstance(raw, bool):
+        raise ValidationFailed(f"cannot parse currency: {raw!r}")
     if isinstance(raw, (int, float)):
         if raw < 0:
             raise ValidationFailed(f"negative currency: {raw!r}")
         return int(raw)
-    m = _GBP_PATTERN.search(str(raw).strip())
+    text = str(raw).strip()
+    if text.startswith("-"):
+        raise ValidationFailed(f"negative currency: {raw!r}")
+    m = _GBP_PATTERN.fullmatch(text)
     if not m:
         raise ValidationFailed(f"cannot parse currency: {raw!r}")
-    value = float(m.group(1))
+    value = float(m.group(1).replace(",", ""))
     if value < 0:
         raise ValidationFailed(f"negative currency: {raw!r}")
     return int(value)
@@ -194,6 +199,8 @@ def parse_time_24h(raw: str) -> str:
     if m := re.fullmatch(r"(\d{1,2})(?:[:.]?(\d{2}))?\s*(am|pm)", s):
         h = int(m.group(1))
         mm = int(m.group(2) or 0)
+        if not (1 <= h <= 12 and 0 <= mm <= 59):
+            raise ValidationFailed(f"cannot parse time: {raw!r}")
         ampm = m.group(3)
         if ampm == "pm" and h < 12:
             h += 12
@@ -208,11 +215,13 @@ def canonicalise_venue_id(raw: str) -> str:
     s = str(raw).strip().lower()
     s = re.sub(r"[\s\-]+", "_", s)
     s = re.sub(r"[^a-z0-9_]", "", s)
-    return s
+    return s.strip("_")
 
 
 def parse_party_size(raw: str | int) -> int:
     """'6' → 6. 6 → 6. '6 people' → 6. Rejects < 1 or non-numeric."""
+    if isinstance(raw, bool):
+        raise ValidationFailed(f"cannot parse party size: {raw!r}")
     if isinstance(raw, int):
         if raw < 1:
             raise ValidationFailed(f"party size must be >= 1, got {raw}")

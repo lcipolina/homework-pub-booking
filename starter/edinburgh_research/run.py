@@ -26,12 +26,80 @@ from sovereign_agent._internal.llm_client import (
 from sovereign_agent._internal.paths import example_sessions_dir
 from sovereign_agent.executor import DefaultExecutor
 from sovereign_agent.halves.loop import LoopHalf
-from sovereign_agent.planner import DefaultPlanner
+from sovereign_agent.planner import DefaultPlanner, Subgoal
 from sovereign_agent.session.directory import create_session
 from sovereign_agent.tickets.ticket import list_tickets
 
 from starter.edinburgh_research.integrity import clear_log, verify_dataflow
 from starter.edinburgh_research.tools import build_tool_registry
+
+_EX5_EXECUTOR_SYSTEM = """\
+You are the EXECUTOR for the Ex5 Edinburgh research scenario.
+
+Use only the registered tools. Never call handoff_to_structured in this
+scenario. The assignment requires all Ex5 work to stay in the loop half.
+
+Use these exact facts:
+- party_size: 6
+- date: 2026-04-25
+- time: 19:30
+- area: Haymarket
+- budget_max_gbp: 800
+- chosen venue_id: haymarket_tap
+- duration_hours: 3
+- catering_tier: bar_snacks
+
+For sg_1, call venue_search, get_weather, and calculate_cost with the
+exact arguments above. For sg_2, call generate_flyer with event_details
+containing the chosen venue, address, weather, total, and deposit. Then
+call complete_task. Do not invent values that a tool did not return.
+"""
+
+
+class _Ex5FixedPlanner:
+    """Deterministic planner for Ex5's required sequence.
+
+    Real-mode still uses the live LLM executor, but the exercise's plan is
+    specified by the assignment. Keeping the planner fixed avoids provider
+    differences where a model assigns this loop-only task to a structured half.
+    """
+
+    name = "ex5_fixed"
+
+    async def plan(self, task: str, context: dict, session) -> list[Subgoal]:
+        session.append_trace_event(
+            {
+                "event_type": "planner.produced_subgoals",
+                "actor": self.name,
+                "payload": {"num_subgoals": 2, "source": "deterministic_ex5"},
+            }
+        )
+        return [
+            Subgoal(
+                id="sg_1",
+                description=(
+                    "Call venue_search(near='Haymarket', party_size=6, "
+                    "budget_max_gbp=800), get_weather(city='edinburgh', "
+                    "date='2026-04-25'), and calculate_cost(venue_id='haymarket_tap', "
+                    "party_size=6, duration_hours=3, catering_tier='bar_snacks')."
+                ),
+                success_criterion="venue, weather, total cost, and deposit are known from tools",
+                estimated_tool_calls=3,
+                assigned_half="loop",
+            ),
+            Subgoal(
+                id="sg_2",
+                description=(
+                    "Call generate_flyer with event_details for Haymarket Tap, then "
+                    "call complete_task with {'flyer': 'workspace/flyer.html', "
+                    "'venue': 'haymarket_tap'}."
+                ),
+                success_criterion="workspace/flyer.html exists and complete_task is called",
+                estimated_tool_calls=2,
+                depends_on=["sg_1"],
+                assigned_half="loop",
+            ),
+        ]
 
 
 def _build_fake_client() -> FakeLLMClient:
@@ -242,9 +310,15 @@ async def run_scenario(real: bool) -> int:
             planner_model = executor_model = "fake"
 
         tools = build_tool_registry(session)
+        planner = _Ex5FixedPlanner() if real else DefaultPlanner(model=planner_model, client=client)
         half = LoopHalf(
-            planner=DefaultPlanner(model=planner_model, client=client),
-            executor=DefaultExecutor(model=executor_model, client=client, tools=tools),  # type: ignore[arg-type]
+            planner=planner,  # type: ignore[arg-type]
+            executor=DefaultExecutor(
+                model=executor_model,
+                client=client,
+                tools=tools,
+                system_prompt=_EX5_EXECUTOR_SYSTEM if real else None,
+            ),  # type: ignore[arg-type]
         )
 
         result = await half.run(session, {"task": "research Edinburgh venue and write flyer"})
