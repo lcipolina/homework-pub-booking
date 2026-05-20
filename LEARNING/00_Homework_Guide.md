@@ -1,96 +1,318 @@
-# 00 — What This Homework Is About
+# 00 — Homework Guide From First Principles
 
-## Overview
+## What Are We Building?
 
-Week 5 asks you to build an AI agent that books an Edinburgh pub. The story
-sounds simple: find a pub, confirm the booking, and talk to the manager. The
-architecture underneath is the real lesson.
+The assignment says: build an AI agent that books a pub.
 
-You are building a small production-style agent system with these parts:
+That sounds simple, but the hidden teaching goal is larger:
 
-- **Ex5:** a loop half researches venues, checks weather, calculates cost,
-  and writes an HTML flyer.
-- **Ex6:** a Rasa CALM structured half validates booking policy.
-- **Ex7:** a handoff bridge sends rejected bookings back to the loop half.
-- **Ex8:** a voice pipeline connects speech-to-text, manager persona, and
-  text-to-speech.
-- **Ex9:** reflection answers grounded in your logs and traces.
+> Build a system where an LLM can reason flexibly, but where important
+> decisions are grounded, validated, logged, and recoverable.
 
-## Product Goal
+The pub-booking story is a wrapper around common production AI problems:
 
-The system should help with a concrete operations task:
+- How does an agent find information?
+- How does it avoid inventing facts?
+- How does it know when a policy says "no"?
+- How does it recover from rejection?
+- How do we inspect what happened after the run?
+- How do we expose the system through voice?
 
-> “Book a suitable pub in Edinburgh for a group, under policy constraints,
-> and produce auditable evidence of how the decision was made.”
+## The Human Story
 
-That means the agent must not merely sound plausible. It must:
+Imagine you are organizing an Edinburgh AI meetup.
 
-- call tools for facts,
-- compute costs deterministically,
-- obey party-size and deposit policy,
-- produce traceable artifacts,
-- recover when a structured validator rejects a proposal.
+You need:
 
-## Big Architecture Idea
+- a pub near Haymarket,
+- enough capacity,
+- a cost estimate,
+- weather context,
+- a flyer,
+- a booking decision,
+- an alternative if the manager rejects,
+- maybe a voice call with the manager.
 
-The homework separates agent work into two styles.
+A human assistant would naturally split this into different kinds of work:
 
-### Loop Half
+```text
+Researcher:
+  "Which venues are possible?"
 
-The loop half is exploratory. It is good at:
+Accountant:
+  "What will catering cost?"
 
-- searching,
-- comparing,
-- deciding which tool to call next,
-- drafting outputs like a flyer.
+Designer:
+  "Make the flyer."
 
-It is risky for:
+Policy/Manager:
+  "Can we actually accept this booking?"
 
-- policy decisions,
-- money constraints,
-- final booking confirmation.
+Coordinator:
+  "If rejected, go back and find another plan."
 
-### Structured Half
+Phone operator:
+  "Talk to the manager out loud."
+```
 
-The structured half is controlled. It is good at:
+The homework turns those roles into software components.
 
-- validating fields,
-- applying business rules,
-- producing predictable accept/reject outcomes.
+## The Technical Story
 
-It is less flexible for:
+The repo implements five exercises:
 
-- open-ended research,
-- discovering alternatives.
+```text
+Ex5: Loop half + tools + dataflow integrity
+Ex6: Rasa structured half
+Ex7: Handoff bridge between loop and structured halves
+Ex8: Voice pipeline
+Ex9: Reflection grounded in run logs
+```
 
-### Bridge
+Each exercise adds one architectural ability.
 
-The bridge coordinates the two:
+```text
+┌─────┬───────────────────────────────┬──────────────────────────────┐
+│ Ex  │ User-facing story             │ Architecture lesson           │
+├─────┼───────────────────────────────┼──────────────────────────────┤
+│ 5   │ Research pubs and make flyer  │ Tool use + integrity          │
+│ 6   │ Confirm/reject booking        │ Structured dialog + policy    │
+│ 7   │ Recover when rejected         │ State machine + handoff       │
+│ 8   │ Speak to pub manager          │ STT/TTS event pipeline        │
+│ 9   │ Explain what happened         │ Evidence-based reflection     │
+└─────┴───────────────────────────────┴──────────────────────────────┘
+```
 
-1. loop proposes a booking,
-2. structured validates it,
-3. if accepted, complete,
-4. if rejected, send the reason back to the loop and try again.
+## Why Not Just Ask One LLM?
 
-This is a pattern you will see in real systems: autonomy where ambiguity is
-high, structure where correctness matters.
+You could ask:
 
-## What You Should Learn
+> "Find a pub, estimate cost, make a flyer, and book it."
 
-You should be able to explain:
+The LLM might answer beautifully, but there are problems:
 
-- why tool calls are evidence,
-- why deterministic code should handle arithmetic and policy,
-- why traces matter for debugging,
-- why “real mode” can fail even when offline tests pass,
-- why a voice interface is a transport layer, not a different brain.
+1. It may invent venues.
+2. It may invent prices.
+3. It may ignore policy.
+4. It may say a booking is confirmed when it is not.
+5. It may be impossible to debug why it chose something.
 
-## Exam Checklist
+This homework prevents those failure modes by making the system explicit.
 
-Be ready to answer:
+```text
+Unstructured chatbot:
 
-1. What is the difference between a loop half and a structured half?
-2. Why does Ex5 need a dataflow integrity check?
-3. Why does Ex7 need reverse handoff?
-4. What does Rasa add that a plain LLM loop does not?
-5. What evidence would prove your agent really did the work?
+  prompt ──▶ LLM ──▶ plausible answer
+
+Problem:
+  The answer may sound right even when unsupported.
+
+Agent architecture:
+
+  prompt ──▶ planner ──▶ tool calls ──▶ trace ──▶ validator ──▶ answer
+                         ▲             │
+                         └──── integrity check
+
+Benefit:
+  Claims can be traced back to evidence.
+```
+
+## The Three Kinds Of Intelligence In The Homework
+
+### 1. Generative Intelligence
+
+The LLM can interpret a task, plan steps, write natural text, recover from
+errors, and hold a conversation.
+
+This appears in:
+
+- Ex5 real-mode executor,
+- Ex8 manager persona,
+- Ex9 written explanations.
+
+Strength:
+
+- flexible,
+- language-native,
+- good at vague tasks.
+
+Weakness:
+
+- can fabricate,
+- can ignore constraints,
+- can be hard to reproduce exactly.
+
+### 2. Procedural Intelligence
+
+Python tools and validators do exact operations:
+
+- filter venues,
+- calculate catering cost,
+- parse currency,
+- check deposit limit,
+- write a flyer file.
+
+Strength:
+
+- deterministic,
+- testable,
+- precise.
+
+Weakness:
+
+- less flexible,
+- must be coded in advance.
+
+### 3. Dialog / Policy Intelligence
+
+Rasa decides whether a booking request satisfies policy.
+
+It is not just "chat." It is a controlled dialog manager with slots, flows,
+actions, and validation rules.
+
+Strength:
+
+- good at stateful business rules,
+- auditable,
+- less likely to improvise policy.
+
+Weakness:
+
+- needs structured inputs,
+- requires setup and training.
+
+## The Central Split: Loop Half vs Structured Half
+
+The homework uses two halves because one component should not do everything.
+
+```text
+┌──────────────────────────────────────┐
+│ Loop Half                            │
+│                                      │
+│ Good for:                            │
+│ - research                           │
+│ - open-ended planning                │
+│ - trying alternatives                │
+│ - using tools                        │
+│                                      │
+│ Bad for:                             │
+│ - final policy enforcement           │
+└──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│ Structured Half                      │
+│                                      │
+│ Good for:                            │
+│ - strict booking rules               │
+│ - slot validation                    │
+│ - confirm/reject decisions           │
+│                                      │
+│ Bad for:                             │
+│ - exploratory research               │
+└──────────────────────────────────────┘
+```
+
+This is a general pattern in agent systems:
+
+> Let the LLM explore. Let structured code decide.
+
+## The Dataflow Lesson
+
+Ex5 asks the agent to make a flyer. Flyers are dangerous because they are
+polished output. Polished output can hide unsupported facts.
+
+Example:
+
+```text
+Tool actually returned:
+  deposit: £320
+
+Flyer says:
+  deposit: £200
+```
+
+That is not a formatting issue. It is a truth issue.
+
+So Ex5 records tool outputs, then checks whether flyer facts appear in those
+outputs.
+
+```text
+tool output ──▶ _TOOL_CALL_LOG ──▶ verify_dataflow ──▶ pass/fail
+      │                                      ▲
+      └──────────── flyer claims ───────────┘
+```
+
+The phrase "dataflow integrity" means:
+
+> Important claims in the final artifact must be traceable to earlier
+> trusted data.
+
+## The Handoff Lesson
+
+Ex7 demonstrates recovery.
+
+The loop proposes a booking. The structured half rejects. The bridge turns
+that rejection into a new loop task.
+
+```text
+Loop:
+  "Try booking 12 people."
+
+Structured:
+  "Rejected: party_too_large."
+
+Bridge:
+  "Loop, try again with that rejection reason."
+
+Loop:
+  "Try booking 6 people at another venue."
+
+Structured:
+  "Approved."
+```
+
+This is much more robust than asking the LLM to "remember to retry." The
+retry is encoded in the state machine.
+
+## The Voice Lesson
+
+Voice mode sounds magical, but conceptually it is just a transport change.
+
+Text mode:
+
+```text
+keyboard text ──▶ manager persona ──▶ terminal text
+```
+
+Voice mode:
+
+```text
+microphone audio ──▶ STT ──▶ manager persona ──▶ TTS ──▶ speaker audio
+```
+
+The same manager policy can run in both modes. The system logs both as
+`voice.utterance_in` and `voice.utterance_out`.
+
+## What "Done" Means
+
+The homework is not done when the code merely runs once. It is done when:
+
+- public tests pass,
+- local grader passes,
+- real sessions exist,
+- traces prove what happened,
+- Ex9 cites evidence,
+- no secrets are committed,
+- the repo is pushed to your fork.
+
+The local check showed:
+
+```text
+Mechanical: 27/27
+Behavioural: 19/19
+Reasoning: CI-only
+```
+
+That means all locally measurable work is complete. The remaining reasoning
+points are judged by CI from your written answers and session evidence.
+

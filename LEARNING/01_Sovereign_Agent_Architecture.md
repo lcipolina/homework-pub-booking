@@ -1,93 +1,298 @@
 # 01 — Sovereign Agent Architecture
 
-## Overview
+## Why An Agent Framework Exists
 
-The homework uses `sovereign-agent`, an agent framework built around
-auditable sessions, tool execution, and communication between “halves.”
-
-The important concepts are:
-
-- **Session:** one run of an agent task.
-- **Workspace:** files produced by the session, such as `flyer.html`.
-- **Logs:** trace events and ticket outputs.
-- **Ticket:** an auditable unit of work such as planner or executor run.
-- **Loop half:** the autonomous tool-using side.
-- **Structured half:** the controlled workflow side.
-- **Handoff:** the data object passed between halves.
-
-## Session Directories
-
-Each real run creates a session directory, for example:
+An LLM API call is stateless:
 
 ```text
-~/Library/Application Support/sovereign-agent/examples/ex5-edinburgh-research/sess_...
+messages ──▶ model ──▶ response
 ```
 
-Inside it you usually find:
+That is not enough for a serious agent. A real agent run needs:
 
-- `session.json` — session metadata,
-- `logs/trace.jsonl` — chronological events,
-- `logs/tickets/` — raw planner/executor outputs,
-- `workspace/` — generated files such as `flyer.html`,
-- IPC/handoff files when halves communicate.
+- durable state,
+- tool execution,
+- planning,
+- retry handling,
+- logs,
+- artifacts,
+- memory,
+- boundaries between components.
 
-This matters because your final answers should describe what actually happened
-in your run, not what you hoped happened.
+The `sovereign-agent` framework provides these pieces so the homework can
+focus on architecture rather than inventing all plumbing from scratch.
 
-## Tickets
+## Mental Model: Agent As A Small Operating System
 
-A ticket is a traceable operation. In Ex5 you may see tickets like:
+Think of the agent framework as a tiny operating system for one task.
 
-- `planner.plan`,
-- `executor.run_subgoal/sg_1`,
-- `executor.run_subgoal/sg_2`.
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ Agent Session                                                 │
+│                                                              │
+│  Task input                                                   │
+│    │                                                         │
+│    ▼                                                         │
+│  Planner ──▶ Subgoals ──▶ Executor ──▶ Tool calls             │
+│    │                         │                               │
+│    │                         ▼                               │
+│    │                    Artifacts/files                       │
+│    │                         │                               │
+│    ▼                         ▼                               │
+│  Tickets                Trace events                          │
+│                                                              │
+│  Session directory stores the whole run.                      │
+└──────────────────────────────────────────────────────────────┘
+```
 
-The raw ticket output tells you what the model planned or executed. If the
-agent claims it did something, the ticket and trace should prove it.
+An operating system keeps processes, logs, files, and errors separate.
+Likewise, a session keeps one agent run separate from another.
 
-## Trace Events
+## Core Vocabulary
 
-The trace is the source of truth for behavior. Typical events include:
+### Session
 
-- `planner.called`,
-- `planner.produced_subgoals`,
-- `executor.tool_called`,
-- `session.state_changed`,
-- `bridge.round_start`,
-- `voice.utterance_in`,
-- `voice.utterance_out`.
+A session is one run of the agent.
 
-When debugging, always ask:
+It usually has:
 
-1. What tool was called?
-2. With what arguments?
-3. Did it succeed?
-4. What did the model do after seeing the result?
+- a session id, such as `sess_918142e47522`,
+- a directory on disk,
+- logs,
+- tickets,
+- workspace files,
+- IPC files,
+- trace events.
 
-## Why This Architecture Exists
+Why this matters:
 
-LLM outputs are probabilistic. Production systems need:
+> Without sessions, evidence from different runs gets mixed together.
 
-- reproducible records,
-- bounded side effects,
-- separation between planning and policy,
-- recovery paths when something fails.
+In this homework, session directories let you prove things like:
 
-The framework’s architecture makes those concerns explicit.
+- Ex5 produced the flyer in that run,
+- Ex7 rejected round 1 and approved round 2,
+- Ex8 recorded real voice events.
 
-## Code Locations
+### Trace
 
-- Ex5 runner: `starter/edinburgh_research/run.py`
-- Ex5 tools: `starter/edinburgh_research/tools.py`
-- Rasa half: `starter/rasa_half/structured_half.py`
-- Handoff bridge: `starter/handoff_bridge/bridge.py`
-- Voice pipeline: `starter/voice_pipeline/voice_loop.py`
+A trace is an event log.
 
-## Exam Checklist
+Example event types:
 
-You should be able to explain:
+```text
+planner.called
+planner.produced_subgoals
+executor.tool_called
+session.state_changed
+voice.utterance_in
+voice.utterance_out
+```
 
-- why session directories are better than ad-hoc print logs,
-- what a ticket represents,
-- why traces are needed for grading and debugging,
-- how a handoff differs from a normal tool call.
+The trace answers:
+
+- What happened?
+- In what order?
+- Which component did it?
+- What payload did it carry?
+
+Simplified trace:
+
+```text
+1. bridge.round_start       round=1, half=loop
+2. planner.called           task="book for party of 12"
+3. executor.tool_called     tool=venue_search
+4. executor.tool_called     tool=handoff_to_structured
+5. session.state_changed    loop -> structured
+6. session.state_changed    structured -> loop, reason=party_too_large
+7. bridge.round_start       round=2, half=loop
+8. executor.tool_called     tool=handoff_to_structured, party_size=6
+9. session.state_changed    structured -> complete
+```
+
+That is much stronger than a final sentence saying "it worked."
+
+### Ticket
+
+A ticket is a durable record of a unit of work.
+
+Planner ticket:
+
+```text
+Task: book for party of 12 in Haymarket
+Subgoals:
+  sg_1 assigned_half="loop"
+```
+
+Executor ticket:
+
+```text
+Subgoal: sg_1
+Tool calls:
+  venue_search(...)
+  handoff_to_structured(...)
+Result:
+  handoff requested
+```
+
+Tickets make the internal reasoning inspectable. They are particularly useful
+for Ex9, because the reasoning judge wants citations grounded in actual run
+artifacts.
+
+### Workspace
+
+The workspace is where an agent writes artifacts.
+
+For Ex5, `generate_flyer` writes:
+
+```text
+workspace/flyer.html
+```
+
+The workspace is session-scoped, so a flyer from yesterday does not silently
+count as today's flyer.
+
+### IPC
+
+IPC means inter-process communication.
+
+In Ex7, the loop and structured halves communicate through handoff files:
+
+```text
+ipc/handoff_to_structured.json
+```
+
+This is a simple but powerful pattern: files become messages between
+components.
+
+## The Half Architecture
+
+The homework uses "halves" because different components should own different
+kinds of work.
+
+```text
+                  ┌─────────────────────┐
+                  │ User task            │
+                  └──────────┬──────────┘
+                             │
+                             ▼
+                  ┌─────────────────────┐
+                  │ Loop half            │
+                  │ planner + executor   │
+                  └──────────┬──────────┘
+                             │ handoff
+                             ▼
+                  ┌─────────────────────┐
+                  │ Structured half      │
+                  │ Rasa + validators    │
+                  └──────────┬──────────┘
+                             │ approve/reject
+                             ▼
+                  ┌─────────────────────┐
+                  │ Final state          │
+                  └─────────────────────┘
+```
+
+The loop half is good at open-ended work:
+
+- choose tools,
+- research,
+- try alternatives,
+- summarize.
+
+The structured half is good at controlled decisions:
+
+- validate fields,
+- enforce limits,
+- return typed approval/rejection.
+
+## Planner And Executor
+
+The planner decides what needs doing.
+
+The executor does it.
+
+```text
+Task:
+  "Find a pub and make a flyer."
+
+Planner:
+  "Subgoal 1: search venues."
+  "Subgoal 2: get weather."
+  "Subgoal 3: calculate cost."
+  "Subgoal 4: generate flyer."
+
+Executor:
+  Calls venue_search
+  Calls get_weather
+  Calls calculate_cost
+  Calls generate_flyer
+```
+
+This split matters because a planner can be wrong. In our implementation,
+Ex5 real mode uses a deterministic planner to avoid provider drift while still
+using a live LLM executor.
+
+That is an important engineering compromise:
+
+> Use an LLM where flexibility helps; use deterministic logic where the
+> assignment requires a stable route.
+
+## Why Logging Is Not Optional
+
+Agent failures are often not obvious from the final output.
+
+Example:
+
+```text
+Final:
+  "The booking is confirmed."
+
+Possible hidden histories:
+  A. Rasa approved it.
+  B. Rasa rejected it, but the LLM ignored the rejection.
+  C. Rasa never ran.
+  D. The LLM invented the confirmation.
+```
+
+Only traces and tickets tell the difference.
+
+That is why the homework keeps asking for:
+
+- session ids,
+- trace evidence,
+- tool-call logs,
+- citations in Ex9.
+
+## Why This Is Called A Production Pattern
+
+Production agent systems need:
+
+- observability,
+- reproducibility,
+- isolation,
+- error recovery,
+- policy boundaries.
+
+This homework is small, but the same pattern scales:
+
+```text
+Customer support agent:
+  LLM drafts response.
+  Policy engine checks refund eligibility.
+  CRM tool fetches account state.
+  Trace records all actions.
+
+Medical intake agent:
+  LLM asks questions.
+  Structured triage rules classify urgency.
+  Logs preserve evidence.
+
+Travel booking agent:
+  LLM searches options.
+  Pricing API provides facts.
+  Policy engine enforces budget.
+```
+
+The lesson is not "pubs." The lesson is controlled autonomy.
+
