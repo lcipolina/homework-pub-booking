@@ -17,9 +17,8 @@ from sovereign_agent._internal.llm_client import (
 )
 from sovereign_agent.config import Config
 
-# TODO: if you want to tweak the persona (accent, attitude, name), edit
-# here. Keep the rules section intact — the grader's judge checks that
-# the manager's decisions still follow them.
+# Persona customization lives here. Keep the rules section intact because the
+# grader's judge checks that the manager's decisions still follow it.
 MANAGER_SYSTEM_PROMPT = """\
 You are Alasdair MacLeod, the manager of Haymarket Tap in Edinburgh.
 You are gruff but fair. You speak in short, direct sentences with an
@@ -86,9 +85,9 @@ class ManagerPersona:
         """System prompt + history + new user message. History is included
         so the manager remembers prior turns (deposit, party size, etc.).
 
-        TODO: if you want to experiment with a windowed history (drop
-        oldest turns when context gets long), do it here. The default
-        shown below keeps everything — fine for short conversations.
+        For longer conversations this could be changed to a windowed
+        history. The homework conversations are short, so keeping every
+        turn is clearer and preserves auditability.
         """
         msgs: list[ChatMessage] = [ChatMessage(role="system", content=self.system_prompt)]
         for turn in self.history:

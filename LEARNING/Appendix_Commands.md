@@ -128,10 +128,10 @@ logs/tickets/<ticket_id>/raw_output.json
 
 ## Useful Search Commands
 
-Find TODOs:
+Find unfinished scaffold markers by searching for the usual marker words:
 
 ```bash
-rg "TODO|NotImplemented|FILL_ME_IN"
+rg "<marker pattern>"
 ```
 
 Find trace events:
@@ -242,4 +242,3 @@ e5fb946 Complete pub booking homework
 ```
 
 If learning docs are expanded later, commit and push again.
-

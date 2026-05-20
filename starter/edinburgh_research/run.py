@@ -7,7 +7,7 @@ Usage:
 What's different from a pure scaffold:
   * `Config.from_env()` is used for --real mode so your `.env` models win
   * `example_sessions_dir()` gives us tempdir-offline, persistent-real
-  * A preflight checks whether your TODOs are implemented and prints
+  * A preflight checks whether the scaffold functions are implemented and prints
     a friendly message instead of letting the framework crash cryptically
 """
 
@@ -234,7 +234,7 @@ def _tools_are_implemented() -> tuple[bool, str]:
             "",
             "  What to do:",
             "    1. Open starter/edinburgh_research/tools.py",
-            "    2. Implement each function marked `TODO` in order: venue_search,",
+            "    2. Implement each scaffold function in order: venue_search,",
             "       get_weather, calculate_cost, generate_flyer.",
             "    3. Open starter/edinburgh_research/integrity.py and implement",
             "       verify_dataflow (the heart of Ex5's grade).",

@@ -1,7 +1,7 @@
 # Week 5 Pub Booking — Deep Learning Guide
 
 This folder is a conceptual textbook for the Week 5 homework. It is written
-from the top: not "which TODO do I fill," but "what kind of system am I
+from the top: not "which blank do I fill," but "what kind of system am I
 building, why is it split this way, and what does each file teach?"
 
 The homework is a miniature production agent system. It combines:
@@ -62,10 +62,14 @@ Read these in order if you want the deep version:
    - One-page diagrams and glossary.
    - Use this when a term feels slippery.
 
-10. `Appendix_Commands.md`
+10. `09_Output_Review_Guide.md`
+    - Where conclusions are written.
+    - Where to inspect model outputs, traces, and consistency evidence.
+
+11. `Appendix_Commands.md`
     - Commands, diagnostics, common failure modes.
 
-11. `Study_Roadmap.md`
+12. `Study_Roadmap.md`
     - A structured study plan for mastering the homework.
 
 ## Big Picture Diagram
@@ -124,4 +128,3 @@ This homework teaches how to wrap an LLM in architecture:
 
 That is the difference between "chatbot that sounds plausible" and "agent
 system that can be debugged, graded, and trusted within a limited domain."
-

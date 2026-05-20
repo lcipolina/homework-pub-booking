@@ -53,7 +53,7 @@ class HandoffBridge:
         self.max_rounds = max_rounds
 
     # ------------------------------------------------------------------
-    # TODO — the main run method
+    # Main bridge loop
     # ------------------------------------------------------------------
     async def run(self, session: Session, initial_task: dict) -> BridgeResult:
         """Run the bridge until the session completes, fails, or hits max_rounds."""

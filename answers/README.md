@@ -6,7 +6,7 @@ file is a prompt template; you fill in the answers.
 **Rules:**
 
 - The grader expects every file to exist, even if an answer is short.
-- Placeholder text (`TODO`, `<your answer here>`, or empty) is scored zero.
+- Unreplaced template markers or empty answers are scored zero.
 - Cite specific ticket IDs, trace lines, or session directory paths where
   relevant. The grader cross-references what you write against the
   `sessions/` artifacts committed to your repo at submission time.

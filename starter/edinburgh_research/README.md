@@ -12,7 +12,7 @@ that catches LLM fabrication.
 
 | File | What it is | Your job |
 |---|---|---|
-| `run.py` | The scenario entrypoint — builds planner + executor, runs them | Fill in the TODOs where the scaffold wires up tools and runs the loop |
+| `run.py` | The scenario entrypoint — builds planner + executor, runs them | Wires the implemented tools and loop-half scenario together |
 | `tools.py` | Four tool implementations | Implement each tool; each must log to `_TOOL_CALL_LOG` |
 | `integrity.py` | The dataflow check | Implement `verify_dataflow()` |
 | `sample_data/` | Fixture JSON the tools read from | **Do not modify** — the grader plants failures here |

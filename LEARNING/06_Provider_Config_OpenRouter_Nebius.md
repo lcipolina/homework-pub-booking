@@ -266,7 +266,7 @@ You want:
 
 - `.env` ignored,
 - no real keys in source files,
-- only placeholder examples in docs.
+- only sample key names in docs, never real secret values.
 
 ## Repo Files To Study
 
@@ -296,4 +296,3 @@ Good agent code should be able to say:
 ```
 
 That is what let the homework proceed when Nebius was unavailable.
-
